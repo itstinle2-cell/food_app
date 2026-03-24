@@ -23,7 +23,7 @@ html, body {
   font-family: Inter, system-ui, sans-serif;
 }
 main { min-height: 100vh; padding: 40px 20px 72px; }
-.container { max-width: 1120px; margin: 0 auto; }
+.container { max-width: 1380px; margin: 0 auto; }
 .hero { margin-bottom: 28px; }
 .eyebrow {
   display: inline-flex;
@@ -49,6 +49,9 @@ main { min-height: 100vh; padding: 40px 20px 72px; }
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;
   gap: 20px;
+}
+.grid.threeCol {
+  grid-template-columns: 1.05fr 0.9fr 0.78fr;
 }
 .card {
   background: var(--panel);
@@ -101,6 +104,9 @@ main { min-height: 100vh; padding: 40px 20px 72px; }
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 16px;
+}
+.actions.compact {
+  align-items: center;
 }
 button {
   border: none;
@@ -226,10 +232,58 @@ button:disabled { opacity: 0.55; cursor: not-allowed; }
   background: rgba(255,255,255,0.05);
   color: var(--accent-strong);
 }
+.textInput {
+  flex: 1;
+  min-width: 220px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  padding: 12px 14px;
+}
+.historyPanel {
+  display: flex;
+  flex-direction: column;
+}
+.historyList {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.historyCard {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  text-align: left;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  width: 100%;
+}
+.historyCard img {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+.historyCard strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+.metaLine {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
 ul { color: var(--muted); margin: 0; padding-left: 18px; }
 
+@media (max-width: 1180px) {
+  .grid.threeCol { grid-template-columns: 1fr 1fr; }
+  .historyPanel { grid-column: 1 / -1; }
+}
+
 @media (max-width: 900px) {
-  .grid { grid-template-columns: 1fr; }
+  .grid, .grid.threeCol { grid-template-columns: 1fr; }
   .panelTall { min-height: auto; }
   .resultHeader,
   .heroStat { flex-direction: column; align-items: flex-start; }

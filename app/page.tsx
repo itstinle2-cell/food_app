@@ -1,7 +1,18 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EstimateResponse } from '@/lib/types';
+
+interface HistoryItem {
+  id: string;
+  createdAt: string;
+  image: string;
+  result: NonNullable<EstimateResponse['result']>;
+  mode?: EstimateResponse['mode'];
+  correction?: string;
+}
+
+const HISTORY_KEY = 'food-app-scan-history';
 
 export default function HomePage() {
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -10,6 +21,22 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EstimateResponse['result'] | null>(null);
   const [mode, setMode] = useState<EstimateResponse['mode']>(undefined);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [correction, setCorrection] = useState('');
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(HISTORY_KEY);
+      if (!raw) return;
+      setHistory(JSON.parse(raw) as HistoryItem[]);
+    } catch {
+      // ignore bad local data
+    }
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  }, [history]);
 
   function fileToDataUrl(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -25,6 +52,7 @@ export default function HomePage() {
     setError(null);
     setResult(null);
     setMode(undefined);
+    setCorrection('');
     setImage(await fileToDataUrl(file));
   }
 
@@ -64,8 +92,19 @@ export default function HomePage() {
       if (!data.success || !data.result) {
         throw new Error(data.error ?? 'Estimate failed');
       }
-      setResult(data.result);
+      const nextResult = data.result;
+      setResult(nextResult);
       setMode(data.mode);
+      setHistory((current) => [
+        {
+          id: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          image,
+          result: nextResult,
+          mode: data.mode,
+        },
+        ...current,
+      ].slice(0, 8));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -78,7 +117,30 @@ export default function HomePage() {
     setError(null);
     setResult(null);
     setMode(undefined);
+    setCorrection('');
     if (fileRef.current) fileRef.current.value = '';
+  }
+
+  function saveCorrection() {
+    if (!result || !correction.trim()) return;
+    setHistory((current) => {
+      if (!current.length) return current;
+      const [first, ...rest] = current;
+      return [{ ...first, correction: correction.trim() }, ...rest];
+    });
+    setCorrection('');
+  }
+
+  function loadHistory(item: HistoryItem) {
+    setImage(item.image);
+    setResult(item.result);
+    setMode(item.mode);
+    setError(null);
+    setCorrection(item.correction ?? '');
+  }
+
+  function clearHistory() {
+    setHistory([]);
   }
 
   const confidenceTone = result?.confidence === 'high' ? 'pill good' : result?.confidence === 'medium' ? 'pill warn' : 'pill soft';
@@ -95,7 +157,7 @@ export default function HomePage() {
           </p>
         </section>
 
-        <section className="grid">
+        <section className="grid threeCol">
           <div className="card panelTall">
             <div className="drop">
               <strong>Choose or paste a food image</strong>
@@ -186,8 +248,48 @@ export default function HomePage() {
                     {result.assumptions.map((item) => <li key={item}>{item}</li>)}
                   </ul>
                 </div>
+
+                <div className="stat">
+                  <small>Wrong guess? Save a correction</small>
+                  <div className="actions compact">
+                    <input
+                      className="textInput"
+                      value={correction}
+                      onChange={(e) => setCorrection(e.target.value)}
+                      placeholder="Example: this was actually one medium banana"
+                    />
+                    <button className="buttonSecondary" type="button" onClick={saveCorrection} disabled={!correction.trim()}>
+                      Save correction
+                    </button>
+                  </div>
+                </div>
               </>
             ) : null}
+          </div>
+
+          <div className="card panelTall historyPanel">
+            <div className="resultHeader">
+              <div>
+                <h2>Recent scans</h2>
+                <p className="note">Local-only history stored in this browser.</p>
+              </div>
+              <button className="buttonSecondary" type="button" onClick={clearHistory} disabled={!history.length}>Clear history</button>
+            </div>
+
+            {!history.length ? <div className="emptyResult"><p className="note">No saved scans yet.</p></div> : null}
+
+            <div className="historyList">
+              {history.map((item) => (
+                <button key={item.id} className="historyCard" type="button" onClick={() => loadHistory(item)}>
+                  <img src={item.image} alt={item.result.foodName} />
+                  <div>
+                    <strong>{item.correction ?? item.result.foodName}</strong>
+                    <div className="metaLine">{item.result.estimatedCalories} kcal · {item.result.confidence} confidence</div>
+                    <div className="metaLine">{new Date(item.createdAt).toLocaleString()}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       </div>
