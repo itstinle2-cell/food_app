@@ -5,6 +5,8 @@ export interface CalorieEstimate {
   confidence: 'low' | 'medium' | 'high';
   explanation: string;
   assumptions: string[];
+  servingEstimate?: string;
+  visualCues?: string[];
 }
 
 export interface EstimateResponse {

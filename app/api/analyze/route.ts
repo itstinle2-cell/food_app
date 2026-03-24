@@ -1,11 +1,61 @@
 import { NextResponse } from 'next/server';
 import { mockEstimate } from '@/lib/mock-estimator';
-import type { EstimateResponse } from '@/lib/types';
+import type { CalorieEstimate, EstimateResponse } from '@/lib/types';
 
 function extractImage(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null;
   const image = (payload as { image?: unknown }).image;
   return typeof image === 'string' && image.startsWith('data:image/') ? image : null;
+}
+
+function clampCalories(value: unknown, fallback: number) {
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num) || num <= 0) return fallback;
+  return Math.round(num);
+}
+
+function normalizeAssumptions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string').slice(0, 6);
+}
+
+function normalizeVisualCues(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string').slice(0, 6);
+}
+
+function normalizeConfidence(value: unknown): CalorieEstimate['confidence'] {
+  return value === 'low' || value === 'medium' || value === 'high' ? value : 'low';
+}
+
+function sanitizeResult(payload: unknown): CalorieEstimate | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const raw = payload as Record<string, unknown>;
+  const foodName = typeof raw.foodName === 'string' && raw.foodName.trim() ? raw.foodName.trim() : 'Unknown food';
+  const estimatedCalories = clampCalories(raw.estimatedCalories, 250);
+
+  const range = raw.calorieRange && typeof raw.calorieRange === 'object'
+    ? raw.calorieRange as Record<string, unknown>
+    : null;
+
+  const min = clampCalories(range?.min, Math.max(estimatedCalories - 120, 50));
+  const max = clampCalories(range?.max, estimatedCalories + 120);
+
+  return {
+    foodName,
+    estimatedCalories,
+    calorieRange: {
+      min: Math.min(min, max),
+      max: Math.max(min, max),
+    },
+    confidence: normalizeConfidence(raw.confidence),
+    explanation: typeof raw.explanation === 'string' && raw.explanation.trim()
+      ? raw.explanation.trim()
+      : 'The estimate is based on visible ingredients, portion size, and common calorie ranges for similar foods.',
+    assumptions: normalizeAssumptions(raw.assumptions),
+    servingEstimate: typeof raw.servingEstimate === 'string' ? raw.servingEstimate : undefined,
+    visualCues: normalizeVisualCues(raw.visualCues),
+  };
 }
 
 export async function POST(request: Request) {
@@ -28,7 +78,23 @@ export async function POST(request: Request) {
       });
     }
 
-    const prompt = 'Analyze this food image and return strict JSON with keys foodName, estimatedCalories, calorieRange { min, max }, confidence, explanation, assumptions. Use an honest estimated calorie range, not fake precision.';
+    const prompt = [
+      'You are estimating calories from a food photo.',
+      'Be conservative and honest about uncertainty.',
+      'If the image is unclear, return low confidence and explain why.',
+      'Return strict JSON only with keys:',
+      '{',
+      '  "foodName": string,',
+      '  "estimatedCalories": number,',
+      '  "calorieRange": { "min": number, "max": number },',
+      '  "confidence": "low" | "medium" | "high",',
+      '  "explanation": string,',
+      '  "assumptions": string[],',
+      '  "servingEstimate": string,',
+      '  "visualCues": string[]',
+      '}',
+      'Do not invent exact nutrition facts. Estimate from visible portion size, likely ingredients, cooking method, and plating clues.'
+    ].join('\n');
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -48,7 +114,7 @@ export async function POST(request: Request) {
             ]
           }
         ],
-        max_tokens: 500
+        max_tokens: 700
       })
     });
 
@@ -60,8 +126,13 @@ export async function POST(request: Request) {
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content;
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const result = sanitizeResult(parsed);
 
-    return NextResponse.json<EstimateResponse>({ success: true, mode: 'ai', result: parsed });
+    if (!result) {
+      return NextResponse.json<EstimateResponse>({ success: false, error: 'Model returned an invalid result.' }, { status: 500 });
+    }
+
+    return NextResponse.json<EstimateResponse>({ success: true, mode: 'ai', result });
   } catch (error) {
     return NextResponse.json<EstimateResponse>({
       success: false,
